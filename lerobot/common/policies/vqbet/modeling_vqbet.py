@@ -98,6 +98,7 @@ class VQBeTPolicy(nn.Module, PyTorchModelHubMixin):
         """
 
         batch = self.normalize_inputs(batch)
+        batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
         batch["observation.images"] = torch.stack([batch[k] for k in self.expected_image_keys], dim=-4)
         # Note: It's important that this happens after stacking the images into a single key.
         self._queues = populate_queues(self._queues, batch)
@@ -123,6 +124,7 @@ class VQBeTPolicy(nn.Module, PyTorchModelHubMixin):
     def forward(self, batch: dict[str, Tensor]) -> dict[str, Tensor]:
         """Run the batch through the model and compute the loss for training or validation."""
         batch = self.normalize_inputs(batch)
+        batch = dict(batch)  # shallow copy so that adding a key doesn't modify the original
         batch["observation.images"] = torch.stack([batch[k] for k in self.expected_image_keys], dim=-4)
         batch = self.normalize_targets(batch)
         # VQ-BeT discretizes action using VQ-VAE before training BeT (please refer to section 3.2 in the VQ-BeT paper https://arxiv.org/pdf/2403.03181)
@@ -298,7 +300,8 @@ class VQBeTModel(nn.Module):
         # bin prediction head / offset prediction head part of VQ-BeT
         self.action_head = VQBeTHead(config)
 
-        num_tokens = self.config.n_action_pred_token + self.config.action_chunk_size - 1
+        # Action tokens for: each observation step, the current action token, and all future action tokens.
+        num_tokens = self.config.n_action_pred_token + self.config.n_obs_steps - 1
         self.register_buffer(
             "select_target_actions_indices",
             torch.row_stack([torch.arange(i, i + self.config.action_chunk_size) for i in range(num_tokens)]),
